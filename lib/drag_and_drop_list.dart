@@ -31,6 +31,9 @@ class DragAndDropList implements DragAndDropListInterface {
   /// If this is not null, it will override that set in [DragAndDropLists.listDecoration].
   final Decoration? decoration;
 
+  /// The margin around the entire list.
+  final EdgeInsets? margin;
+
   /// The vertical alignment of the contents in this list.
   /// If this is not null, it will override that set in [DragAndDropLists.verticalAlignment].
   final CrossAxisAlignment verticalAlignment;
@@ -61,6 +64,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.contentsWhenEmpty,
     this.lastTarget,
     this.decoration,
+    this.margin,
     this.horizontalAlignment = MainAxisAlignment.start,
     this.verticalAlignment = CrossAxisAlignment.start,
     this.canDrag = true,
@@ -98,7 +102,7 @@ class DragAndDropList implements DragAndDropListInterface {
       contents.add(Flexible(child: footer!));
     }
 
-    return Container(
+    Widget listContainer = Container(
       key: key,
       width: params.axis == Axis.vertical
           ? double.infinity
@@ -110,6 +114,16 @@ class DragAndDropList implements DragAndDropListInterface {
         children: contents,
       ),
     );
+
+    // Apply margin if provided
+    if (margin != null) {
+      listContainer = Container(
+        margin: margin,
+        child: listContainer,
+      );
+    }
+
+    return listContainer;
   }
 
   List<Widget> _generateDragAndDropListInnerContents(
