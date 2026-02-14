@@ -34,6 +34,9 @@ class DragAndDropList implements DragAndDropListInterface {
   /// The margin around the entire list.
   final EdgeInsets? margin;
 
+  /// The padding inside the list.
+  final EdgeInsets? padding;
+
   /// The vertical alignment of the contents in this list.
   /// If this is not null, it will override that set in [DragAndDropLists.verticalAlignment].
   final CrossAxisAlignment verticalAlignment;
@@ -65,6 +68,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.lastTarget,
     this.decoration,
     this.margin,
+    this.padding,
     this.horizontalAlignment = MainAxisAlignment.start,
     this.verticalAlignment = CrossAxisAlignment.start,
     this.canDrag = true,
@@ -108,6 +112,7 @@ class DragAndDropList implements DragAndDropListInterface {
           ? double.infinity
           : params.listWidth - params.listPadding!.horizontal,
       decoration: decoration ?? params.listDecoration,
+      padding: padding,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: verticalAlignment,
