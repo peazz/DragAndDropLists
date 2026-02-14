@@ -34,8 +34,14 @@ class DragAndDropList implements DragAndDropListInterface {
   /// The margin around the entire list.
   final EdgeInsets? margin;
 
-  /// The padding inside the list.
+  /// The padding inside the list (outer container).
   final EdgeInsets? padding;
+
+  /// The decoration for the inner content container.
+  final Decoration? innerDecoration;
+
+  /// The padding inside the inner content container.
+  final EdgeInsets? innerPadding;
 
   /// The vertical alignment of the contents in this list.
   /// If this is not null, it will override that set in [DragAndDropLists.verticalAlignment].
@@ -69,6 +75,8 @@ class DragAndDropList implements DragAndDropListInterface {
     this.decoration,
     this.margin,
     this.padding,
+    this.innerDecoration,
+    this.innerPadding,
     this.horizontalAlignment = MainAxisAlignment.start,
     this.verticalAlignment = CrossAxisAlignment.start,
     this.canDrag = true,
@@ -76,18 +84,19 @@ class DragAndDropList implements DragAndDropListInterface {
 
   @override
   Widget generateWidget(DragAndDropBuilderParameters params) {
-    var contents = <Widget>[];
-    if (header != null) {
-      contents.add(Flexible(child: header!));
-    }
+
+    List<Widget> contents = _generateDragAndDropListInnerContents(params);
+ 
+
     Widget intrinsicHeight = IntrinsicHeight(
       child: Row(
         mainAxisAlignment: horizontalAlignment,
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: _generateDragAndDropListInnerContents(params),
+        children: contents,
       ),
     );
+
     if (params.axis == Axis.horizontal) {
       intrinsicHeight = SizedBox(
         width: params.listWidth,
@@ -100,11 +109,6 @@ class DragAndDropList implements DragAndDropListInterface {
         child: intrinsicHeight,
       );
     }
-    contents.add(intrinsicHeight);
-
-    if (footer != null) {
-      contents.add(Flexible(child: footer!));
-    }
 
     Widget listContainer = Container(
       key: key,
@@ -113,20 +117,23 @@ class DragAndDropList implements DragAndDropListInterface {
           : params.listWidth - params.listPadding!.horizontal,
       decoration: decoration ?? params.listDecoration,
       padding: padding,
+      margin: margin,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: verticalAlignment,
-        children: contents,
+        children: [
+          if(header != null) Flexible(child: header!),
+
+          if(children.isNotEmpty) Container(
+            padding: innerPadding,
+            decoration: innerDecoration,
+            child: intrinsicHeight,
+          ),
+
+          if(footer != null) Flexible(child: footer!),
+        ],
       ),
     );
-
-    // Apply margin if provided
-    if (margin != null) {
-      listContainer = Container(
-        margin: margin,
-        child: listContainer,
-      );
-    }
 
     return listContainer;
   }
