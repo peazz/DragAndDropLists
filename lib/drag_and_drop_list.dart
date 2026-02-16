@@ -37,6 +37,11 @@ class DragAndDropList implements DragAndDropListInterface {
   /// The padding inside the list (outer container).
   final EdgeInsets? padding;
 
+  /// The clip behavior for the inner container.
+  /// If this is not null, it will override that set in [DragAndDropLists.innerClipBehavior].
+  /// By default, the inner container does not clip.
+  final Clip? innerClipBehavior;
+
   /// The decoration for the inner content container.
   final Decoration? innerDecoration;
 
@@ -75,6 +80,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.decoration,
     this.margin,
     this.padding,
+    this.innerClipBehavior,
     this.innerDecoration,
     this.innerPadding,
     this.horizontalAlignment = MainAxisAlignment.start,
@@ -111,6 +117,7 @@ class DragAndDropList implements DragAndDropListInterface {
     }
 
     Widget listContainer = Container(
+      clipBehavior: Clip.hardEdge,
       key: key,
       width: params.axis == Axis.vertical
           ? double.infinity
@@ -124,7 +131,8 @@ class DragAndDropList implements DragAndDropListInterface {
         children: [
           if(header != null) Flexible(child: header!),
 
-          if(children.isNotEmpty) Container(
+          Container(
+            clipBehavior: innerClipBehavior ?? Clip.none,
             padding: innerPadding,
             decoration: innerDecoration,
             child: intrinsicHeight,

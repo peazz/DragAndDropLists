@@ -563,12 +563,22 @@ class DragAndDropListsState extends State<DragAndDropLists> {
     for (int i = 0; i < widget.children.length; i++) {
       if (reorderedItemIndex == -1) {
         reorderedItemIndex =
-            widget.children[i].children!.indexWhere((e) => reordered == e);
+            widget.children[i].children!.indexWhere((e) => e == reordered);
+        // Fallback: match by key when identity fails (e.g. after setState rebuild)
+        if (reorderedItemIndex == -1 && reordered.key != null) {
+          reorderedItemIndex = widget.children[i].children!
+              .indexWhere((e) => e.key != null && e.key == reordered.key);
+        }
         if (reorderedItemIndex != -1) reorderedListIndex = i;
       }
       if (receiverItemIndex == -1) {
         receiverItemIndex =
-            widget.children[i].children!.indexWhere((e) => receiver == e);
+            widget.children[i].children!.indexWhere((e) => e == receiver);
+        // Fallback: match by key when identity fails (e.g. after setState rebuild)
+        if (receiverItemIndex == -1 && receiver.key != null) {
+          receiverItemIndex = widget.children[i].children!
+              .indexWhere((e) => e.key != null && e.key == receiver.key);
+        }
         if (receiverItemIndex != -1) receiverListIndex = i;
       }
       if (reorderedItemIndex != -1 && receiverItemIndex != -1) {
@@ -629,8 +639,14 @@ class DragAndDropListsState extends State<DragAndDropLists> {
       for (int i = 0; i < widget.children.length; i++) {
         if (reorderedItemIndex == -1) {
           reorderedItemIndex = widget.children[i].children
-                  ?.indexWhere((e) => newOrReordered == e) ??
+                  ?.indexWhere((e) => e == newOrReordered) ??
               -1;
+          // Fallback: match by key when identity fails (e.g. after setState rebuild)
+          if (reorderedItemIndex == -1 && newOrReordered.key != null) {
+            reorderedItemIndex = widget.children[i].children
+                    ?.indexWhere((e) => e.key != null && e.key == newOrReordered.key) ??
+                -1;
+          }
           if (reorderedItemIndex != -1) reorderedListIndex = i;
         }
 
