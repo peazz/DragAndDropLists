@@ -6,6 +6,15 @@ import 'package:drag_and_drop_lists/drag_and_drop_list_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 
+/// Builder that receives the default inner content and returns a custom
+/// container widget. Use this when [BoxDecoration] alone isn't enough and
+/// you need full control over the list wrapper (e.g. a custom card, a
+/// [ClipRRect], a [Material], etc.).
+typedef ListContainerBuilder = Widget Function(
+  Widget child,
+  DragAndDropBuilderParameters params,
+);
+
 class DragAndDropList implements DragAndDropListInterface {
   /// The widget that is displayed at the top of the list.
   final Widget? header;
@@ -30,6 +39,12 @@ class DragAndDropList implements DragAndDropListInterface {
   /// The decoration displayed around a list.
   /// If this is not null, it will override that set in [DragAndDropLists.listDecoration].
   final Decoration? decoration;
+
+  /// An optional builder that replaces the default outer [Container].
+  /// When provided, [decoration], [padding], and [margin] are ignored and the
+  /// builder receives the inner content widget so you can wrap it however you
+  /// like.
+  final ListContainerBuilder? containerBuilder;
 
   /// The margin around the entire list.
   final EdgeInsets? margin;
@@ -78,6 +93,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.contentsWhenEmpty,
     this.lastTarget,
     this.decoration,
+    this.containerBuilder,
     this.margin,
     this.padding,
     this.innerClipBehavior,
@@ -116,32 +132,42 @@ class DragAndDropList implements DragAndDropListInterface {
       );
     }
 
-    Widget listContainer = Container(
-      clipBehavior: Clip.hardEdge,
-      key: key,
-      width: params.axis == Axis.vertical
-          ? double.infinity
-          : params.listWidth - params.listPadding!.horizontal,
-      decoration: decoration ?? params.listDecoration,
-      padding: padding,
-      margin: margin,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: verticalAlignment,
-        children: [
-          if(header != null) Flexible(child: header!),
+    final innerColumn = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: verticalAlignment,
+      children: [
+        if (header != null) Flexible(child: header!),
 
-          Container(
-            clipBehavior: innerClipBehavior ?? Clip.none,
-            padding: innerPadding,
-            decoration: innerDecoration,
-            child: intrinsicHeight,
-          ),
+        Container(
+          clipBehavior: innerClipBehavior ?? Clip.none,
+          padding: innerPadding,
+          decoration: innerDecoration,
+          child: intrinsicHeight,
+        ),
 
-          if(footer != null) Flexible(child: footer!),
-        ],
-      ),
+        if (footer != null) Flexible(child: footer!),
+      ],
     );
+
+    Widget listContainer;
+    if (containerBuilder != null) {
+      listContainer = KeyedSubtree(
+        key: key,
+        child: containerBuilder!(innerColumn, params),
+      );
+    } else {
+      listContainer = Container(
+        clipBehavior: Clip.hardEdge,
+        key: key,
+        width: params.axis == Axis.vertical
+            ? double.infinity
+            : params.listWidth - params.listPadding!.horizontal,
+        decoration: decoration ?? params.listDecoration,
+        padding: padding,
+        margin: margin,
+        child: innerColumn,
+      );
+    }
 
     return listContainer;
   }
