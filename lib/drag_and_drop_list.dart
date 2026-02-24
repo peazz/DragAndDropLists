@@ -36,21 +36,10 @@ class DragAndDropList implements DragAndDropListInterface {
   /// a dragged item.
   final Widget? lastTarget;
 
-  /// The decoration displayed around a list.
-  /// If this is not null, it will override that set in [DragAndDropLists.listDecoration].
-  final Decoration? decoration;
-
   /// An optional builder that replaces the default outer [Container].
-  /// When provided, [decoration], [padding], and [margin] are ignored and the
-  /// builder receives the inner content widget so you can wrap it however you
-  /// like.
+  /// The builder receives the inner content widget so you can wrap it however
+  /// you like (custom card, ClipRRect, Material, etc.).
   final ListContainerBuilder? containerBuilder;
-
-  /// The margin around the entire list.
-  final EdgeInsets? margin;
-
-  /// The padding inside the list (outer container).
-  final EdgeInsets? padding;
 
   /// The clip behavior for the inner container.
   /// If this is not null, it will override that set in [DragAndDropLists.innerClipBehavior].
@@ -92,10 +81,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.rightSide,
     this.contentsWhenEmpty,
     this.lastTarget,
-    this.decoration,
     this.containerBuilder,
-    this.margin,
-    this.padding,
     this.innerClipBehavior,
     this.innerDecoration,
     this.innerPadding,
@@ -162,9 +148,7 @@ class DragAndDropList implements DragAndDropListInterface {
         width: params.axis == Axis.vertical
             ? double.infinity
             : params.listWidth - params.listPadding!.horizontal,
-        decoration: decoration ?? params.listDecoration,
-        padding: padding,
-        margin: margin,
+        decoration: params.listDecoration,
         child: innerColumn,
       );
     }
