@@ -15,6 +15,12 @@ typedef ListContainerBuilder = Widget Function(
   DragAndDropBuilderParameters params,
 );
 
+/// Builder that wraps the inner items column (the area between header/footer).
+/// Receives the inner content widget so you can apply clip, decoration,
+/// padding, etc. in one place instead of using [innerClipBehavior],
+/// [innerDecoration] and [innerPadding] separately.
+typedef InnerContainerBuilder = Widget Function(Widget child);
+
 class DragAndDropList implements DragAndDropListInterface {
   /// The widget that is displayed at the top of the list.
   final Widget? header;
@@ -48,6 +54,12 @@ class DragAndDropList implements DragAndDropListInterface {
 
   /// The decoration for the inner content container.
   final Decoration? innerDecoration;
+
+  /// An optional builder that replaces the default inner [Container].
+  /// When provided, [innerClipBehavior], [innerDecoration] and [innerPadding]
+  /// are ignored – the builder has full control over how the inner content
+  /// is wrapped.
+  final InnerContainerBuilder? innerContainerBuilder;
 
   /// The padding inside the inner content container.
   final EdgeInsets? innerPadding;
@@ -84,6 +96,7 @@ class DragAndDropList implements DragAndDropListInterface {
     this.containerBuilder,
     this.innerClipBehavior,
     this.innerDecoration,
+    this.innerContainerBuilder,
     this.innerPadding,
     this.horizontalAlignment = MainAxisAlignment.start,
     this.verticalAlignment = CrossAxisAlignment.start,
@@ -118,19 +131,21 @@ class DragAndDropList implements DragAndDropListInterface {
       );
     }
 
+    final Widget innerContent = innerContainerBuilder != null
+        ? innerContainerBuilder!(intrinsicHeight)
+        : Container(
+            clipBehavior: innerClipBehavior ?? Clip.none,
+            padding: innerPadding,
+            decoration: innerDecoration,
+            child: intrinsicHeight,
+          );
+
     final innerColumn = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: verticalAlignment,
       children: [
         if (header != null) Flexible(child: header!),
-
-        Container(
-          clipBehavior: innerClipBehavior ?? Clip.none,
-          padding: innerPadding,
-          decoration: innerDecoration,
-          child: intrinsicHeight,
-        ),
-
+        innerContent,
         if (footer != null) Flexible(child: footer!),
       ],
     );
