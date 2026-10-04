@@ -23,7 +23,6 @@ import 'package:drag_and_drop_lists/drag_and_drop_list_wrapper.dart';
 import 'package:drag_and_drop_lists/drag_handle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 export 'package:drag_and_drop_lists/drag_and_drop_builder_parameters.dart';
@@ -268,13 +267,6 @@ class DragAndDropLists extends StatefulWidget {
   /// parent CustomScrollView to set physics to NeverScrollableScrollPhysics()
   final bool disableScrolling;
 
-  /// Distance from a visible edge at which dragging starts auto-scrolling.
-  final double autoScrollExtent;
-
-  /// Maximum auto-scroll speed in logical pixels per second.
-  /// Speed increases as the pointer approaches the edge.
-  final double autoScrollSpeed;
-
   /// Set a custom drag handle to use iOS-like handles to drag rather than long
   /// or short presses
   final DragHandle? listDragHandle;
@@ -340,16 +332,12 @@ class DragAndDropLists extends StatefulWidget {
     this.sliverList = false,
     this.scrollController,
     this.disableScrolling = false,
-    this.autoScrollExtent = 20,
-    this.autoScrollSpeed = 200,
     this.listDragHandle,
     this.itemDragHandle,
     this.constrainDraggingAxis = true,
     this.removeTopPadding = false,
     super.key,
   }) {
-    assert(autoScrollExtent > 0 && autoScrollExtent.isFinite);
-    assert(autoScrollSpeed >= 0 && autoScrollSpeed.isFinite);
     if (listGhost == null &&
         children
             .whereType<DragAndDropListExpansionInterface>()
@@ -375,44 +363,23 @@ class DragAndDropLists extends StatefulWidget {
   State<StatefulWidget> createState() => DragAndDropListsState();
 }
 
-class DragAndDropListsState extends State<DragAndDropLists>
-    with SingleTickerProviderStateMixin {
+class DragAndDropListsState extends State<DragAndDropLists> {
   ScrollController? _scrollController;
   bool _pointerDown = false;
   double? _pointerYPosition;
   double? _pointerXPosition;
-  late final Ticker _autoScrollTicker;
-  Duration? _lastScrollTick;
+  bool _scrolling = false;
   final PageStorageBucket _pageStorageBucket = PageStorageBucket();
 
   @override
   void initState() {
-    super.initState();
     if (widget.scrollController != null) {
       _scrollController = widget.scrollController;
     } else {
       _scrollController = ScrollController();
     }
 
-    _autoScrollTicker = createTicker(_scrollList);
-  }
-
-  @override
-  void didUpdateWidget(covariant DragAndDropLists oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.scrollController != widget.scrollController) {
-      _stopAutoScroll();
-      if (oldWidget.scrollController == null) _scrollController?.dispose();
-      _scrollController = widget.scrollController ?? ScrollController();
-    }
-    if (widget.disableScrolling) _stopAutoScroll();
-  }
-
-  @override
-  void dispose() {
-    _autoScrollTicker.dispose();
-    if (widget.scrollController == null) _scrollController?.dispose();
-    super.dispose();
+    super.initState();
   }
 
   @override
@@ -432,8 +399,8 @@ class DragAndDropListsState extends State<DragAndDropLists>
       onItemReordered: _internalOnItemReorder,
       onItemDropOnLastTarget: _internalOnItemDropOnLastTarget,
       onListReordered: _internalOnListReorder,
-      onItemDraggingChanged: _onItemDraggingChanged,
-      onListDraggingChanged: _onListDraggingChanged,
+      onItemDraggingChanged: widget.onItemDraggingChanged,
+      onListDraggingChanged: widget.onListDraggingChanged,
       listOnWillAccept: widget.listOnWillAccept,
       listTargetOnWillAccept: widget.listTargetOnWillAccept,
       itemOnWillAccept: widget.itemOnWillAccept,
@@ -729,122 +696,165 @@ class DragAndDropListsState extends State<DragAndDropLists>
     }
   }
 
-  void _onPointerMove(PointerMoveEvent event) {
-    if (!_pointerDown) return;
-    _pointerYPosition = event.position.dy;
-    _pointerXPosition = event.position.dx;
+  _onPointerMove(PointerMoveEvent event) {
+    if (_pointerDown) {
+      _pointerYPosition = event.position.dy;
+      _pointerXPosition = event.position.dx;
 
-    if (_autoScrollVelocity() == 0) {
-      _stopAutoScroll();
-    } else if (!_autoScrollTicker.isActive) {
-      _lastScrollTick = null;
-      _autoScrollTicker.start();
+      _scrollList();
     }
   }
 
-  void _onPointerDown(PointerDownEvent event) {
-    _stopAutoScroll();
+  _onPointerDown(PointerDownEvent event) {
     _pointerDown = true;
     _pointerYPosition = event.position.dy;
     _pointerXPosition = event.position.dx;
   }
 
-  void _onPointerUp(PointerUpEvent event) {
-    _endDrag();
-  }
-
-  void _onItemDraggingChanged(DragAndDropItem item, bool dragging) {
-    if (!dragging) _endDrag();
-    widget.onItemDraggingChanged?.call(item, dragging);
-  }
-
-  void _onListDraggingChanged(DragAndDropListInterface? list, bool dragging) {
-    if (!dragging) _endDrag();
-    widget.onListDraggingChanged?.call(list, dragging);
-  }
-
-  void _endDrag() {
+  _onPointerUp(PointerUpEvent event) {
     _pointerDown = false;
-    _stopAutoScroll();
   }
 
-  void _stopAutoScroll() {
-    _autoScrollTicker.stop();
-    _lastScrollTick = null;
+  final int _duration = 30; // in ms
+  final int _scrollAreaSize = 20;
+  final double _overDragMin = 5.0;
+  final double _overDragMax = 20.0;
+  final double _overDragCoefficient = 3.3;
+
+  _scrollList() async {
+    if (!widget.disableScrolling &&
+        !_scrolling &&
+        _pointerDown &&
+        _pointerYPosition != null &&
+        _pointerXPosition != null) {
+      double? newOffset;
+
+      var rb = context.findRenderObject()!;
+      late Size size;
+      if (rb is RenderBox) {
+        size = rb.size;
+      } else if (rb is RenderSliver) {
+        size = rb.paintBounds.size;
+      }
+
+      var topLeftOffset = localToGlobal(rb, Offset.zero);
+      var bottomRightOffset = localToGlobal(rb, size.bottomRight(Offset.zero));
+
+      if (widget.axis == Axis.vertical) {
+        newOffset = _scrollListVertical(topLeftOffset, bottomRightOffset);
+      } else {
+        var directionality = Directionality.of(context);
+        if (directionality == TextDirection.ltr) {
+          newOffset =
+              _scrollListHorizontalLtr(topLeftOffset, bottomRightOffset);
+        } else {
+          newOffset =
+              _scrollListHorizontalRtl(topLeftOffset, bottomRightOffset);
+        }
+      }
+
+      if (newOffset != null) {
+        _scrolling = true;
+        await _scrollController!.animateTo(newOffset,
+            duration: Duration(milliseconds: _duration), curve: Curves.linear);
+        _scrolling = false;
+        if (_pointerDown) _scrollList();
+      }
+    }
   }
 
-  Rect? _autoScrollBounds() {
-    final renderObject = context.findRenderObject();
-    if (renderObject == null || !renderObject.attached) return null;
-    final bounds = MatrixUtils.transformRect(
-        renderObject.getTransformTo(null), renderObject.paintBounds);
-    if (renderObject is! RenderSliver) return bounds;
+  double? _scrollListVertical(Offset topLeftOffset, Offset bottomRightOffset) {
+    double top = topLeftOffset.dy;
+    double bottom = bottomRightOffset.dy;
+    double? newOffset;
 
-    final viewport = RenderAbstractViewport.of(renderObject);
-    final viewportBounds = MatrixUtils.transformRect(
-        viewport.getTransformTo(null), viewport.paintBounds);
-    // Use the viewport and sliver layout's visible area. Overlap accounts for
-    // preceding slivers; SliverPadding already adjusts it for its own padding.
-    final overlap = max(0.0, renderObject.constraints.overlap);
-    if (renderObject.constraints.axisDirection == AxisDirection.up) {
-      return Rect.fromLTRB(viewportBounds.left, viewportBounds.top,
-          viewportBounds.right, min(viewportBounds.bottom, bounds.bottom - overlap));
+    var pointerYPosition = _pointerYPosition;
+    var scrollController = _scrollController;
+    if (scrollController != null && pointerYPosition != null) {
+      if (pointerYPosition < (top + _scrollAreaSize) &&
+          scrollController.position.pixels >
+              scrollController.position.minScrollExtent) {
+        final overDrag =
+            max((top + _scrollAreaSize) - pointerYPosition, _overDragMax);
+        newOffset = max(scrollController.position.minScrollExtent,
+            scrollController.position.pixels - overDrag / _overDragCoefficient);
+      } else if (pointerYPosition > (bottom - _scrollAreaSize) &&
+          scrollController.position.pixels <
+              scrollController.position.maxScrollExtent) {
+        final overDrag = max<double>(
+            pointerYPosition - (bottom - _scrollAreaSize), _overDragMax);
+        newOffset = min(scrollController.position.maxScrollExtent,
+            scrollController.position.pixels + overDrag / _overDragCoefficient);
+      }
     }
-    return Rect.fromLTRB(viewportBounds.left,
-        max(viewportBounds.top, bounds.top + overlap),
-        viewportBounds.right, viewportBounds.bottom);
+
+    return newOffset;
   }
 
-  double _autoScrollVelocity() {
-    final controller = _scrollController;
-    if (!mounted || !_pointerDown || widget.disableScrolling ||
-        controller == null || !controller.hasClients ||
-        !controller.position.hasContentDimensions) {
-      return 0;
+  double? _scrollListHorizontalLtr(
+      Offset topLeftOffset, Offset bottomRightOffset) {
+    double left = topLeftOffset.dx;
+    double right = bottomRightOffset.dx;
+    double? newOffset;
+
+    var pointerXPosition = _pointerXPosition;
+    var scrollController = _scrollController;
+    if (scrollController != null && pointerXPosition != null) {
+      if (pointerXPosition < (left + _scrollAreaSize) &&
+          scrollController.position.pixels >
+              scrollController.position.minScrollExtent) {
+        // scrolling toward minScrollExtent
+        final overDrag = min(
+            (left + _scrollAreaSize) - pointerXPosition + _overDragMin,
+            _overDragMax);
+        newOffset = max(scrollController.position.minScrollExtent,
+            scrollController.position.pixels - overDrag / _overDragCoefficient);
+      } else if (pointerXPosition > (right - _scrollAreaSize) &&
+          scrollController.position.pixels <
+              scrollController.position.maxScrollExtent) {
+        // scrolling toward maxScrollExtent
+        final overDrag = min(
+            pointerXPosition - (right - _scrollAreaSize) + _overDragMin,
+            _overDragMax);
+        newOffset = min(scrollController.position.maxScrollExtent,
+            scrollController.position.pixels + overDrag / _overDragCoefficient);
+      }
     }
 
-    final pointer = widget.axis == Axis.vertical
-        ? _pointerYPosition : _pointerXPosition;
-    final bounds = _autoScrollBounds();
-    if (pointer == null || bounds == null || bounds.isEmpty) return 0;
-    final start = widget.axis == Axis.vertical ? bounds.top : bounds.left;
-    final end = widget.axis == Axis.vertical ? bounds.bottom : bounds.right;
-    final extent = min(widget.autoScrollExtent, (end - start) / 2);
-    double velocity = 0;
-    if (pointer < start + extent) {
-      velocity = -((start + extent - pointer) / extent).clamp(0.0, 1.0) * widget.autoScrollSpeed;
-    } else if (pointer > end - extent) {
-      velocity = ((pointer - end + extent) / extent).clamp(0.0, 1.0) * widget.autoScrollSpeed;
-    }
-
-    final position = controller.position;
-    if (position.axisDirection == AxisDirection.up ||
-        position.axisDirection == AxisDirection.left) {
-      velocity = -velocity;
-    }
-    if ((velocity < 0 && position.pixels <= position.minScrollExtent) ||
-        (velocity > 0 && position.pixels >= position.maxScrollExtent)) {
-      return 0;
-    }
-    return velocity;
+    return newOffset;
   }
 
-  void _scrollList(Duration elapsed) {
-    final velocity = _autoScrollVelocity();
-    if (velocity == 0) {
-      _stopAutoScroll();
-      return;
-    }
-    final previous = _lastScrollTick;
-    _lastScrollTick = elapsed;
-    if (previous == null) return;
+  double? _scrollListHorizontalRtl(
+      Offset topLeftOffset, Offset bottomRightOffset) {
+    double left = topLeftOffset.dx;
+    double right = bottomRightOffset.dx;
+    double? newOffset;
 
-    // Cap long frames so resuming after a stall cannot jump across several lists.
-    final seconds = min((elapsed - previous).inMicroseconds / 1000000.0, 0.05);
-    final position = _scrollController!.position;
-    final offset = (position.pixels + velocity * seconds)
-        .clamp(position.minScrollExtent, position.maxScrollExtent).toDouble();
-    if (offset != position.pixels) position.jumpTo(offset);
+    var pointerXPosition = _pointerXPosition;
+    var scrollController = _scrollController;
+    if (scrollController != null && pointerXPosition != null) {
+      if (pointerXPosition < (left + _scrollAreaSize) &&
+          scrollController.position.pixels <
+              scrollController.position.maxScrollExtent) {
+        // scrolling toward maxScrollExtent
+        final overDrag = min(
+            (left + _scrollAreaSize) - pointerXPosition + _overDragMin,
+            _overDragMax);
+        newOffset = min(scrollController.position.maxScrollExtent,
+            scrollController.position.pixels + overDrag / _overDragCoefficient);
+      } else if (pointerXPosition > (right - _scrollAreaSize) &&
+          scrollController.position.pixels >
+              scrollController.position.minScrollExtent) {
+        // scrolling toward minScrollExtent
+        final overDrag = min(
+            pointerXPosition - (right - _scrollAreaSize) + _overDragMin,
+            _overDragMax);
+        newOffset = max(scrollController.position.minScrollExtent,
+            scrollController.position.pixels - overDrag / _overDragCoefficient);
+      }
+    }
+
+    return newOffset;
   }
 
   static Offset localToGlobal(RenderObject object, Offset point,
